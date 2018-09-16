@@ -1,4 +1,4 @@
-PSXImager V2.0
+PSXImager Headers V0.1
 ==============
 
 PSXImager is a collection of tools for dumping and (pre-)mastering
@@ -44,12 +44,7 @@ libcdio and libvcdinfo libraries for most of its work.
 psxrip
 ------
 
-Usage: psxrip [OPTION...] <input>[.bin/cue] [<output_dir>]
-  -l, --lbns                      Write LBNs to catalog file
-  -t, --lbn-table                 Print LBN table and exit
-  -v, --verbose                   Be verbose
-  -V, --version                   Display version information and exit
-  -?, --help                      Show this help message
+Usage: psxrip(boost::filesystem::path & file_target)
 
 Reads the data track of the given input CD image and dumps the filesystem
 contents to a directory together with a "catalog" file which specifies the
@@ -106,11 +101,7 @@ These files can be used with psxbuild to recreate a CD image of the game.
 psxbuild
 --------
 
-Usage: psxbuild [OPTION...] <input>[.cat] [<output>[.bin]]
-  -c, --cuefile                   Create a .cue file
-  -v, --verbose                   Be verbose
-  -V, --version                   Display version information and exit
-  -?, --help                      Show this help message
+Usage: psxbuild (boost::filesystem::path & file_target)
 
 Creates a raw mode BIN/CUE CD image from a catalog file and a directory tree
 holding the contents of the CD filesystem.
@@ -154,32 +145,6 @@ PlayStation 1 games access their data files directly via sector numbers
 instead of going through the filesystem, a game whose image has been rebuilt
 with psxbuild may crash or not work correctly. In this case it will be
 necessary to adapt the game code to the changed LBNs.
-
-
-psxinject
----------
-
-Usage: psxinject [OPTION...] <input>[.bin/cue] <repl_file_path> <new_file>
-  -v, --verbose                   Be verbose
-  -V, --version                   Display version information and exit
-  -?, --help                      Show this help message
-
-Replaces the contents of a file inside a standard or raw mode BIN/CUE image
-with a file from the local filesystem, preserving the file's name,
-attributes, and start sector. This is useful when patching individual files
-without having to rebuild the entire CD image.
-
-The new file must not require a greater number of sectors in the image, i.e.
-shrinking a file is allowed, but extending it beyond sector boundaries is
-not. If the new file is significantly larger than the existing file the
-image must be rebuilt in its entirety using psxrip/psxbuild.
-
-Usage example:
-
-To replace the file with the path GFX/INTRO.TIM in the CD image GAME.bin/cue
-with the contents of the local file "new_intro.tim", use:
-
-  psxinject GAME.cue GFX/INTRO.TIM new_intro.tim
 
 
 Catalog File Syntax
@@ -351,10 +316,3 @@ The root directory of the produced image will contain the files "SYSTEM.CNF"
 and "MYGAME.EXE", plus the directory "GFX" with its two files "INTRO.TIM"
 and "MOVIE.STR", the latter being a Form 2 file. The "MOVIE.STR" file will
 start at sector 1000, if possible.
-
-
-Author
-------
-
-Christian Bauer
-www.cebix.net
