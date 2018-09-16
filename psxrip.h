@@ -18,6 +18,20 @@
 // Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301
 //
 
+//
+// std namespace
+#include <algorithm>
+#include <exception>
+#include <fstream>
+#include <iostream>
+#include <string>
+
+//
+// boost namespace
+#include <boost/filesystem.hpp>
+#include <boost/format.hpp>
+// using boost::format;
+
 #include <stdint.h>
 
 #include <cdio/cdio.h>
@@ -30,49 +44,39 @@ extern "C" {
 #include <libvcd/info.h>
 #include <libvcd/sector.h>
 }
-
-#include <boost/filesystem.hpp>
-#include <boost/format.hpp>
-using boost::format;
-
-#include <algorithm>
-#include <exception>
-#include <fstream>
-#include <iostream>
-#include <string>
-using namespace std;
-
-
-#define TOOL_VERSION "PSXRip 2.0"
-
+// end includes
 
 // Sector buffer
 static char buffer[M2RAW_SECTOR_SIZE];
 
-
 // Print an ISO long-format time structure to a file.
-static void print_ltime(ofstream & f, const iso9660_ltime_t & l)
-{
-	f << format("%.4s-%.2s-%.2s %.2s:%.2s:%.2s.%.2s %d")
+static void print_ltime(
+  std::ofstream & f, 
+  const iso9660_ltime_t & l
+) {
+	f << boost::format("%.4s-%.2s-%.2s %.2s:%.2s:%.2s.%.2s %d")
 	   % l.lt_year % l.lt_month % l.lt_day
 	   % l.lt_hour % l.lt_minute % l.lt_second % l.lt_hsecond
-	   % int(l.lt_gmtoff) << endl;
+	   % int(l.lt_gmtoff) << std::endl;
 }
-
+//
+// end print_ltime()
 
 // Dump system area data from image to file.
-static void dumpSystemArea(CdIo_t * image, const boost::filesystem::path & fileName)
-{
-	ofstream file(fileName.c_str(), ofstream::out | ofstream::binary | ofstream::trunc);
+static void dumpSystemArea(
+  CdIo_t * image, 
+  const boost::filesystem::path & fileName
+) {
+	std::ofstream file(fileName.string(), std::ios::out | std::ios::binary | std::ios::trunc);
 	if (!file) {
-		throw runtime_error((format("Cannot create system area file %1%\n") % fileName).str());
+		throw std::runtime_error((boost::format("Cannot create system area file %1%\n") % fileName).str());
 	}
 
 	const size_t numSystemAreaSectors = 16;
 	for (size_t sector = 0; sector < numSystemAreaSectors; ++sector) {
 		driver_return_code_t r = cdio_read_mode2_sector(image, buffer, sector, true);
 		if (r != DRIVER_OP_SUCCESS) {
-			throw runtime_error((format("Error reading sector %1% of image file: %2%") % sector % cdio_driver_errmsg(r)).str());
+			throw std::runtime_error((boost::format("Error reading sector %1% of image file: %2%" ) % sector % cdio_driver_errmsg(r) ).str());
 		}
 
 		if (buffer[2] != SM_DATA) {
@@ -83,11 +87,10 @@ static void dumpSystemArea(CdIo_t * image, const boost::filesystem::path & fileN
 
 		file.write(buffer + CDIO_CD_SUBHEADER_SIZE, CDIO_CD_FRAMESIZE);
 		if (!file) {
-			throw runtime_error((format("Cannot write to system area file %1%") % fileName).str());
+			throw std::runtime_error((boost::format("Cannot write to system area file %1%") % fileName).str());
 		}
 	}
 }
-
 
 // Functor for sorting a container of iso9660_stat_t pointers by LSN
 struct CmpByLSN {
@@ -97,19 +100,23 @@ struct CmpByLSN {
 	}
 };
 
-
 // Recursively dump the contents of the ISO filesystem starting at 'dir'
 // while extending the catalog file.
-static void dumpFilesystem(CdIo_t * image, ofstream & catalog, bool writeLBNs,
-						   const boost::filesystem::path & outputPath, const string & inputPath = "",
-						   const string & dirName = "", unsigned level = 0)
-{
+static void dumpFilesystem(
+  CdIo_t * image, 
+  std::ofstream & catalog, 
+  bool writeLBNs,
+  const boost::filesystem::path & outputPath, 
+  const std::string & inputPath = "",
+  const std::string & dirName = "", 
+  unsigned level = 0
+) {
 	cdio_info("Dumping '%s' as '%s'", inputPath.c_str(), dirName.c_str());
 
 	// Read the directory entries
-	CdioList_t * entries = iso9660_fs_readdir(image, inputPath.c_str(), false);
+	CdioList_t * entries = iso9660_fs_readdir(image, inputPath.c_str());
 	if (!entries) {
-		throw runtime_error((format("Error reading ISO 9660 directory '%1%'") % inputPath).str());
+		throw std::runtime_error((boost::format("Error reading ISO 9660 directory '%1%'") % inputPath).str());
 	}
 
 	// Create the output directory
@@ -120,7 +127,7 @@ static void dumpFilesystem(CdIo_t * image, ofstream & catalog, bool writeLBNs,
 	if (level == 0) {
 		catalog << "dir {\n";  // root
 	} else {
-		catalog << string(level * 2, ' ') << "dir " << dirName;
+		catalog << std::string(level * 2, ' ') << "dir " << dirName;
 		if (writeLBNs) {
 			iso9660_stat_t * stat = static_cast<iso9660_stat_t *>(_cdio_list_node_data(_cdio_list_begin(entries)));  // "." entry
 			catalog << " @" << stat->lsn;
@@ -129,20 +136,20 @@ static void dumpFilesystem(CdIo_t * image, ofstream & catalog, bool writeLBNs,
 	}
 
 	// Sort entries by sector number
-	vector<iso9660_stat_t *> sortedChildren;
+	std::vector<iso9660_stat_t *> sortedChildren;
 
 	CdioListNode_t * entry;
 	_CDIO_LIST_FOREACH(entry, entries) {
 		sortedChildren.push_back(static_cast<iso9660_stat_t *>(_cdio_list_node_data(entry)));
 	}
 
-	sort(sortedChildren.begin(), sortedChildren.end(), CmpByLSN());
+	std::sort(sortedChildren.begin(), sortedChildren.end(), CmpByLSN());
 
 	// Dump all entries
-	for (vector<iso9660_stat_t *>::const_iterator i = sortedChildren.begin(); i != sortedChildren.end(); ++i) {
+	for (std::vector<iso9660_stat_t *>::const_iterator i = sortedChildren.begin(); i != sortedChildren.end(); ++i) {
 		iso9660_stat_t * stat = *i;
-		string entryName = stat->filename;
-		string entryPath = inputPath.empty() ? entryName : (inputPath + "/" + entryName);
+		std::string entryName = stat->filename;
+		std::string entryPath = inputPath.empty() ? entryName : (inputPath + "/" + entryName);
 
 		if (stat->type == iso9660_stat_s::_STAT_DIR) {
 
@@ -155,7 +162,7 @@ static void dumpFilesystem(CdIo_t * image, ofstream & catalog, bool writeLBNs,
 
 			// Entry is a file, strip the version number
 			size_t versionSep = entryName.find_last_of(';');
-			if (versionSep != string::npos) {
+			if (versionSep != std::string::npos) {
 				entryName = entryName.substr(0, versionSep);
 			}
 
@@ -170,7 +177,7 @@ static void dumpFilesystem(CdIo_t * image, ofstream & catalog, bool writeLBNs,
 				}
 
 				if (attr & XA_ATTR_CDDA) {
-					cout << "Skipping '" << entryPath << "' which is a CD-DA file\n";
+					std::cout << "Skipping '" << entryPath << "' which is a CD-DA file\n";
 					continue;
 				}
 			}
@@ -182,7 +189,7 @@ static void dumpFilesystem(CdIo_t * image, ofstream & catalog, bool writeLBNs,
 			size_t fileSize = form2File ? stat->secsize * blockSize : stat->size;
 
 			// Write the catalog record for the file
-			catalog << string((level + 1) * 2, ' ') << (form2File ? "xa" : "") << "file " << entryName;
+			catalog << std::string((level + 1) * 2, ' ') << (form2File ? "xa" : "") << "file " << entryName;
 			if (writeLBNs) {
 				catalog << " @" << stat->lsn;
 			}
@@ -190,9 +197,9 @@ static void dumpFilesystem(CdIo_t * image, ofstream & catalog, bool writeLBNs,
 
 			// Dump the file contents
 			boost::filesystem::path outputFileName = outputDirName / entryName;
-			ofstream file(outputFileName.c_str(), ofstream::out | ofstream::binary | ofstream::trunc);
+			std::ofstream file(outputFileName.string(), std::ofstream::out | std::ofstream::binary | std::ofstream::trunc);
 			if (!file) {
-				throw runtime_error((format("Cannot create output file %1%") % outputFileName).str());
+				throw std::runtime_error((boost::format("Cannot create output file %1%") % outputFileName).str());
 			}
 
 			size_t sizeRemaining = fileSize;
@@ -207,8 +214,8 @@ static void dumpFilesystem(CdIo_t * image, ofstream & catalog, bool writeLBNs,
 					r = cdio_read_data_sectors(image, buffer, stat->lsn + sector, blockSize, 1);
 				}
 				if (r != DRIVER_OP_SUCCESS) {
-					cerr << format("Error reading sector %1% of image file: %2%") % (stat->lsn + sector) % cdio_driver_errmsg(r) << endl;
-					cerr << format("Output file %1% may be incomplete") % outputFileName << endl;
+					std::cerr << boost::format("Error reading sector %1% of image file: %2%") % (stat->lsn + sector) % cdio_driver_errmsg(r) << std::endl;
+					std::cerr << boost::format("Output file %1% may be incomplete") % outputFileName << std::endl;
 					break;
 				}
 
@@ -216,7 +223,7 @@ static void dumpFilesystem(CdIo_t * image, ofstream & catalog, bool writeLBNs,
 
 				file.write(buffer, sizeToWrite);
 				if (!file) {
-					throw runtime_error((format("Cannot write to file %1%") % outputFileName).str());
+					throw std::runtime_error((boost::format("Cannot write to file %1%") % outputFileName).str());
 				}
 
 				sizeRemaining -= sizeToWrite;
@@ -225,21 +232,25 @@ static void dumpFilesystem(CdIo_t * image, ofstream & catalog, bool writeLBNs,
 	}
 
 	// Close the catalog record for the directory
-	catalog << string(level * 2, ' ') << "}\n";
+	catalog << std::string(level * 2, ' ') << "}\n";
 
 	_cdio_list_free(entries, true);
 }
-
+// end dumpFilesystem()
+//
 
 // Dump image to system area data, catalog file, and output directory.
-static void dumpImage(CdIo_t * image, const boost::filesystem::path & outputPath, bool writeLBNs)
-{
+static void dumpImage(
+  CdIo_t * image, 
+  const boost::filesystem::path & outputPath, 
+  bool writeLBNs
+) {
 	// Read ISO volume information
 	iso9660_pvd_t pvd;
 	if (!iso9660_fs_read_pvd(image, &pvd)) {
-		throw runtime_error("Error reading ISO 9660 volume information");
+		throw std::runtime_error("Error reading ISO 9660 volume information");
 	}
-	cout << "Volume ID = " << iso9660_get_volume_id(&pvd) << endl;
+	std::cout << "Volume ID = " << iso9660_get_volume_id(&pvd) << std::endl;
 
 	// Construct names of output files
 	boost::filesystem::path catalogName = outputPath;
@@ -249,15 +260,15 @@ static void dumpImage(CdIo_t * image, const boost::filesystem::path & outputPath
 	systemAreaName.replace_extension(".sys");
 
 	// Create output catalog file
-	ofstream catalog(catalogName.c_str(), ofstream::out | ofstream::trunc);
+	std::ofstream catalog(catalogName.string(), std::ofstream::out | std::ofstream::trunc);
 	if (!catalog) {
-		throw runtime_error((format("Cannot create catalog file %1%") % catalogName).str());
+		throw std::runtime_error((boost::format("Cannot create catalog file %1%") % catalogName).str());
 	}
 
 	// Dump system area data
 	dumpSystemArea(image, systemAreaName);
 
-	cout << "System area data written to " << systemAreaName << "\n";
+	std::cout << "System area data written to " << systemAreaName << "\n";
 
 	catalog << "system_area {\n";
 	catalog << "  file " << systemAreaName << "\n";
@@ -282,144 +293,27 @@ static void dumpImage(CdIo_t * image, const boost::filesystem::path & outputPath
 
 	// Dump ISO filesystem
 	if (!iso9660_fs_read_superblock(image, ISO_EXTENSION_NONE)) {
-		throw runtime_error("Error reading ISO 9660 volume information");
+		throw std::runtime_error("Error reading ISO 9660 volume information");
 	}
 
-	cout << "Dumping filesystem to directory " << outputPath << "...\n";
+	std::cout << "Dumping filesystem to directory " << outputPath << "...\n";
 	dumpFilesystem(image, catalog, writeLBNs, outputPath);
 
 	// Close down
-	cout << "Catalog written to " << catalogName << "\n";
+	std::cout << "Catalog written to " << catalogName << "\n";
 }
-
-
-// Dump an LBN table of the image to the given output stream.
-static void dumpLBNTable(CdIo_t * image, const string & inputPath = "", ostream & output = cout)
-{
-	// Read the directory entries
-	CdioList_t * entries = iso9660_fs_readdir(image, inputPath.c_str(), false);
-	if (!entries) {
-		throw runtime_error((format("Error reading ISO 9660 directory '%1%'") % inputPath).str());
-	}
-
-	// Print table header before root directory
-	if (inputPath.empty()) {
-		output << boost::format("%8s %8s %8s T Path") % "LBN" % "NumSec" % "Size" << endl;
-	}
-
-	// Print entry for directory itself
-	iso9660_stat_t * stat = static_cast<iso9660_stat_t *>(_cdio_list_node_data(_cdio_list_begin(entries)));  // "." entry
-	output << boost::format("%08x %08x %08x d %s") % stat->lsn % stat->secsize % stat->size % inputPath << endl;
-
-	// Sort entries by sector number
-	vector<iso9660_stat_t *> sortedChildren;
-
-	CdioListNode_t * entry;
-	_CDIO_LIST_FOREACH(entry, entries) {
-		sortedChildren.push_back(static_cast<iso9660_stat_t *>(_cdio_list_node_data(entry)));
-	}
-
-	sort(sortedChildren.begin(), sortedChildren.end(), CmpByLSN());
-
-	// Print all directory entries
-	for (vector<iso9660_stat_t *>::const_iterator i = sortedChildren.begin(); i != sortedChildren.end(); ++i) {
-		stat = *i;
-
-		string entryName = stat->filename;
-		size_t versionSep = entryName.find_last_of(';');
-		if (versionSep != string::npos) {
-			entryName = entryName.substr(0, versionSep);  // strip version number
-		}
-
-		string entryPath = inputPath.empty() ? entryName : (inputPath + "/" + entryName);
-
-		if (stat->type == iso9660_stat_s::_STAT_DIR) {
-
-			// Entry is a directory, recurse into it unless it is "." or ".."
-			if (entryName != "." && entryName != "..") {
-				dumpLBNTable(image, entryPath, output);
-			}
-
-		} else {
-
-			// Entry is a file
-			size_t fileSize = stat->size;
-			char typeChar = 'f';
-
-			if (stat->b_xa) {
-				uint16_t attr = uint16_from_be(stat->xa.attributes);
-				if (attr & (XA_ATTR_MODE2FORM2 | XA_ATTR_INTERLEAVED)) {
-					typeChar = 'x';
-					fileSize = stat->secsize * M2RAW_SECTOR_SIZE;
-				}
-				if (attr & XA_ATTR_CDDA) {
-					typeChar = 'a';
-				}
-			}
-
-			output << boost::format("%08x %08x %08x %c %s") % stat->lsn % stat->secsize % fileSize % typeChar % entryPath << endl;
-		}
-	}
-}
-
-
-// Print usage information and exit.
-static void usage(const char * progname, int exitcode = 0, const string & error = "")
-{
-	cout << "Usage: " << boost::filesystem::path(progname).filename().native() << " [OPTION...] <input>[.bin/cue] [<output_dir>]" << endl;
-	cout << "  -l, --lbns                      Write LBNs to catalog file" << endl;
-	cout << "  -t, --lbn-table                 Print LBN table and exit" << endl;
-	cout << "  -v, --verbose                   Be verbose" << endl;
-	cout << "  -V, --version                   Display version information and exit" << endl;
-	cout << "  -?, --help                      Show this help message" << endl;
-
-	if (!error.empty()) {
-		cerr << endl << "Error: " << error << endl;
-	}
-
-	exit(exitcode);
-}
+//
+// end dumpImage()
 
 
 // Main program
-int main(int argc, const char ** argv)
-{
+void psxrip(
+  boost::filesystem::path inputPath
+) {
 	// Parse command line arguments
-	boost::filesystem::path inputPath;
-	boost::filesystem::path outputPath;
+  boost::filesystem::path outputPath;
 	bool writeLBNs = false;
-	bool printLBNTable = false;
-
-	for (int i = 1; i < argc; ++i) {
-		string arg = argv[i];
-
-		if (arg == "--version" || arg == "-V") {
-			cout << TOOL_VERSION << endl;
-			return 0;
-		} else if (arg == "--lbns" || arg == "-l") {
-			writeLBNs = true;
-		} else if (arg == "--lbn-table" || arg == "-t") {
-			printLBNTable = true;
-		} else if (arg == "--verbose" || arg == "-v") {
-			cdio_loglevel_default = CDIO_LOG_INFO;
-		} else if (arg == "--help" || arg == "-?") {
-			usage(argv[0]);
-		} else if (arg[0] == '-') {
-			usage(argv[0], 64, "Invalid option '" + arg + "'");
-		} else {
-			if (inputPath.empty()) {
-				inputPath = arg;
-			} else if (outputPath.empty()) {
-				outputPath = arg;
-			} else {
-				usage(argv[0], 64, "Unexpected extra argument '" + arg + "'");
-			}
-		}
-	}
-
-	if (inputPath.empty()) {
-		usage(argv[0], 64, "No input image specified");
-	}
+  cdio_loglevel_default = CDIO_LOG_INFO;
 
 	if (outputPath.empty()) {
 		outputPath = inputPath;
@@ -427,18 +321,19 @@ int main(int argc, const char ** argv)
 	}
 
 	try {
-
+    //
 		// Open the input image
-		if (inputPath.extension().empty()) {
+ 		if (inputPath.extension().empty()) {
 			inputPath.replace_extension(".bin");
 		}
 
-		CdIo_t * image = cdio_open(inputPath.c_str(), DRIVER_BINCUE);
-		if (image == NULL) {
-			throw runtime_error((format("Error opening input image %1%, or image has wrong type") % inputPath).str());
+		CdIo_t * image = cdio_open(inputPath.string(), DRIVER_BINCUE);
+		
+    if (image == NULL) {
+			throw std::runtime_error((boost::format("Error opening input image %1%, or image has wrong type") % inputPath).str());
 		}
 
-		cout << "Analyzing image " << inputPath << "...\n";
+		std::cout << "Analyzing image " << inputPath << "...\n";
 
 		// Is it the correct type?
 		discmode_t discMode = cdio_get_discmode(image);
@@ -448,21 +343,22 @@ int main(int argc, const char ** argv)
 			case CDIO_DISC_MODE_CD_XA:
 			case CDIO_DISC_MODE_CD_MIXED:
 				break;
-
 			default:
-				throw runtime_error("Input image is not a CD-ROM data disc");
+				throw std::runtime_error("Input image is not a CD-ROM data disc");
 		}
 
 		track_t firstTrack = cdio_get_first_track_num(image);
 		cdio_info("First track = %d", firstTrack);
+
 		if (firstTrack == CDIO_INVALID_TRACK) {
-			throw runtime_error("Cannot determine first track number");
+			throw std::runtime_error("Cannot determine first track number");
 		}
 
 		track_format_t trackFormat = cdio_get_track_format(image, firstTrack);
 		cdio_info("Track format = %d", trackFormat);
+
 		if (trackFormat != TRACK_FORMAT_DATA && trackFormat != TRACK_FORMAT_XA) {
-			throw runtime_error((format("First track (%1%) is not a data track") % firstTrack).str());
+			throw std::runtime_error((boost::format("First track (%1%) is not a data track") % firstTrack).str());
 		}
 
 		msf_t startMSF;
@@ -474,29 +370,20 @@ int main(int argc, const char ** argv)
 		cdio_iso_analysis_t isoType;
 		type = cdio_guess_cd_type(image, startLSN, firstTrack, &isoType);
 		cdio_info("Filesystem type = %04x", type);
+
 		if (CDIO_FSTYPE(type) != CDIO_FS_ISO_9660) {
-			throw runtime_error("No ISO 9660 filesystem on data track");
+			throw std::runtime_error("No ISO 9660 filesystem on data track");
 		}
 
-		if (printLBNTable) {
 
-			// Print the LBN table
-			dumpLBNTable(image);
-
-		} else {
-
-			// Dump the input image
-			dumpImage(image, outputPath, writeLBNs);
-		}
+    // Dump the input image
+    dumpImage(image, outputPath, writeLBNs);
 
 		// Close the input image
 		cdio_destroy(image);
 		cdio_info("Done.");
 
 	} catch (const std::exception & e) {
-		cerr << e.what() <<endl;
-		return 1;
+		std::cerr << e.what() << std::endl;
 	}
-
-	return 0;
 }
