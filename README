@@ -12,7 +12,7 @@ PlayStation 1 ("PSX") CD-ROM images. It consists of three tools:
    The inverse of psxrip; takes a catalog file and a directory tree to
    produce a binary CD image which can be burned to a CD medium.
 
- * psxinject
+ * psxinject [Coming Soon]
    Replaces the contents of a file inside a binary CD image.
 
 What sets PSXImager apart from standard ISO 9660 imaging tools is that
